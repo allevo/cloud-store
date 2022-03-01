@@ -1,33 +1,19 @@
 import { Static, Type } from '@sinclair/typebox';
-import { FastifyPluginAsync } from 'fastify'
-import fastifyJwt from 'fastify-jwt'
-import AuthService, { FindCredentialArgument, FindCredentialArgumentType } from './service'
+import { FastifyInstance, FastifyLoggerInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
+import { IncomingMessage, Server, ServerResponse } from 'http';
+import { FindCredentialArgument, FindCredentialArgumentType } from './service'
 
-
-declare module "fastify-jwt" {
-    interface FastifyJWT {
-        payload: JWTPayload
-    }
-}
-
-interface JWTPayload {
-    sub: string,
-    name: string,
-    groups: string[],
-}
 
 const Response = Type.Object({
     token: Type.String(),
 })
-type ResponseType = Static<typeof Response>;
+export type ResponseType = Static<typeof Response>;
 
 
 const auth: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
-    fastify.register(fastifyJwt, {
-        secret: 'supersecret'
-    })
-
-    const service = new AuthService();
+    if (!fastify.authService) {
+        throw new Error('Invalid setup: authService not configured correctly')
+    }
 
     fastify.post<{ Body: FindCredentialArgumentType; Reply: ResponseType }>('/login', {
         schema: {
@@ -36,23 +22,30 @@ const auth: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
                 200: Response,
             },
         },
-    }, async function (request, reply) {
-        const body = request.body
+    }, handleLogin)
+}
 
-        const userProfile = await service.findCredentials(body)
+async function handleLogin(
+    this: FastifyInstance<Server, IncomingMessage, ServerResponse, FastifyLoggerInstance>,
+    request: FastifyRequest<{ Body: FindCredentialArgumentType; Reply: ResponseType; }>,
+    reply: FastifyReply<any, any, any, {
+        Body: FindCredentialArgumentType;
+        Reply: ResponseType;
+    }>): Promise<ResponseType> {
+    const body = request.body
+    const userProfile = await this.authService.findCredentials(body)
 
-        if (!userProfile) {
-            throw fastify.httpErrors.forbidden('No user found')
-        }
+    if (!userProfile) {
+        throw this.httpErrors.forbidden('No user found')
+    }
 
-        const token = await reply.jwtSign({
-            sub: `${userProfile.id}`,
-            name: `${userProfile.name} ${userProfile.surname}`,
-            groups: userProfile.groups,
-        });
+    const token = await reply.jwtSign({
+        sub: `${userProfile.username}`,
+        name: `${userProfile.name} ${userProfile.surname}`,
+        groups: userProfile.groups,
+    });
 
-        return { token }
-    })
+    return { token }
 }
 
 export default auth;

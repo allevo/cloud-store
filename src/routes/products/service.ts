@@ -21,7 +21,7 @@ export default class ProductService {
     constructor() {
         this.instance = axios.create({
             baseURL: 'https://fakestoreapi.com/',
-            timeout: 10000,
+            timeout: 30000,
         });
 
         const ajv = new Ajv().addKeyword('kind').addKeyword('modifier')
@@ -40,6 +40,12 @@ export default class ProductService {
         }
 
         const productsLitResponse = await this.instance.get<FakeProductListType>(url)
+
+        if (productsLitResponse.status !== 200) {
+            log.error('OUCH', { status: productsLitResponse.status })
+            throw new Error('OUCH')
+        }
+
         const productsLit = productsLitResponse.data
         if (!this.validate(productsLit)) {
             log.error('Validation failed', { errors: this.validate.errors })
